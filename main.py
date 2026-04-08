@@ -11,7 +11,7 @@ ytmusic = YTMusic()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000",
-                   "https://mudai-three.vercel.app/"],  # 프론트엔드 주소 허용
+                   "https://mudai-three.vercel.app"],  # 프론트엔드 주소 허용
     allow_credentials=True,
     allow_methods=["*"],  # GET, POST 등 모든 통신 방식 허용
     allow_headers=["*"],
