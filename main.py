@@ -10,7 +10,8 @@ ytmusic = YTMusic()
 # Next.js(localhost:3000)에서 이 파이썬 서버로 통신할 수 있게 허락해주는 설정이야.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # 프론트엔드 주소 허용
+    allow_origins=["http://localhost:3000",
+                   "https://mudai-three.vercel.app/"],  # 프론트엔드 주소 허용
     allow_credentials=True,
     allow_methods=["*"],  # GET, POST 등 모든 통신 방식 허용
     allow_headers=["*"],
