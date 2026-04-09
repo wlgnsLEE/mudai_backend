@@ -1,12 +1,13 @@
+import re
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from ytmusicapi import YTMusic
 
-# 1. FastAPI 앱 및 YTMusic 객체 생성
+# FastAPI 앱 및 YTMusic 객체 생성
 app = FastAPI()
 ytmusic = YTMusic()
 
-# 2. CORS 설정 (가장 중요!)
+# CORS 설정 (가장 중요!)
 # Next.js(localhost:3000)에서 이 파이썬 서버로 통신할 수 있게 허락해주는 설정이야.
 app.add_middleware(
     CORSMiddleware,
@@ -17,7 +18,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 3. 유튜브 뮤직 검색 API 엔드포인트 만들기
+# 프론트엔드에서 가져온 제목 텍스트 가공
+def clean_and_split_title(raw_title: str):
+    # 1. 특수문자 디코딩
+    text = raw_title.replace("&quot;", '"').replace("&#39;", "'").replace("&amp;", "&")
+    
+    # 2. 메인 제목과 서브 정답(alt_answers) 분리 (기존 fetchYouTubeTracks 로직)
+    main_title = text
+    alt_answer = ""
+    
+    if " - " in text:
+        parts = text.split(" - ", 1)
+        main_title = parts[0].strip()
+        alt_answer = parts[1].strip()
+    elif " (" in text:
+        parts = text.split(" (", 1)
+        main_title = parts[0].strip()
+        alt_answer = parts[1].replace(")", "").strip()
+
+    # 3. 메인 제목에서 쓸데없는 말과 괄호 지우기 (기존 cleanUpTitle 로직)
+    match = re.search(r"「(.*?)」", main_title)
+    if match:
+        clean_title = match.group(1)
+    else:
+        # 대소문자 무시(re.IGNORECASE)하고 지저분한 키워드 싹둑!
+        clean_title = re.sub(r"【.*?】|\[.*?\]|\(.*?\)|official|music video|mv|audio", "", main_title, flags=re.IGNORECASE).strip()
+        
+    return clean_title, alt_answer
+
+# 유튜브 뮤직 검색 API 엔드포인트 만들기
 @app.get("/api/search")
 async def search_music(artist: str, limit: int = 20):
     try:
@@ -28,10 +57,16 @@ async def search_music(artist: str, limit: int = 20):
         # Next.js 프론트엔드가 쓰기 편하게 데이터 모양을 깔끔하게 다듬기
         clean_tracks = []
         for item in search_results:
+            raw_title = item.get("title", "")
+            
+            # 제목 가공
+            clean_title, alt_answer = clean_and_split_title(raw_title)
+
             # 곡 제목, 비디오 ID, 썸네일 등 필요한 것만 추출
             clean_tracks.append({
                 "videoId": item.get("videoId"),
-                "title": item.get("title"),
+                "title": clean_title,       
+                "alt_answers": alt_answer,  
                 "artist": ", ".join([a.get("name") for a in item.get("artists", [])]),
                 "thumbnail": item.get("thumbnails")[-1].get("url") if item.get("thumbnails") else "",
                 "duration": item.get("duration"),
