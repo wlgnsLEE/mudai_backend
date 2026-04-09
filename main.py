@@ -2,12 +2,15 @@ import re
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from ytmusicapi import YTMusic
+import pykakasi
 
 # FastAPI 앱 및 YTMusic 객체 생성
 app = FastAPI()
 ytmusic = YTMusic()
 
-# CORS 설정 (가장 중요!)
+kks = pykakasi.kakasi()
+
+# CORS 설정 
 # Next.js(localhost:3000)에서 이 파이썬 서버로 통신할 수 있게 허락해주는 설정이야.
 app.add_middleware(
     CORSMiddleware,
@@ -62,11 +65,30 @@ async def search_music(artist: str, limit: int = 20):
             # 제목 가공
             clean_title, alt_answer = clean_and_split_title(raw_title)
 
+            # 발음 추출
+            # 한자가 섞인 clean_title을 분석해서 여러 형태로 변환함
+            kks_result = kks.convert(clean_title)
+            
+            # 1. 가타카나 발음 추출 (예: カイジュウノハナウタ)
+            kana_reading = "".join([r['kana'] for r in kks_result])
+            # 2. 로마자 영어 발음 추출 (예: kaijuunohanauta)
+            romaji_reading = "".join([r['hepburn'] for r in kks_result])
+
+            combined_alts = []
+            if alt_answer: 
+                combined_alts.append(alt_answer)
+            if kana_reading and kana_reading != clean_title: 
+                combined_alts.append(kana_reading) # 한자가 포함된 경우만 추가!
+            if romaji_reading: 
+                combined_alts.append(romaji_reading)
+                
+            final_alt_answers = ",".join(combined_alts)
+
             # 곡 제목, 비디오 ID, 썸네일 등 필요한 것만 추출
             clean_tracks.append({
                 "videoId": item.get("videoId"),
                 "title": clean_title,       
-                "alt_answers": alt_answer,  
+                "alt_answers": final_alt_answers,  
                 "artist": ", ".join([a.get("name") for a in item.get("artists", [])]),
                 "thumbnail": item.get("thumbnails")[-1].get("url") if item.get("thumbnails") else "",
                 "duration": item.get("duration"),
