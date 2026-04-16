@@ -3,11 +3,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from ytmusicapi import YTMusic
 import pykakasi
+import random
 
 # FastAPI 앱 및 YTMusic 객체 생성
 app = FastAPI()
 ytmusic = YTMusic()
-
 kks = pykakasi.kakasi()
 
 # CORS 설정 
@@ -20,6 +20,14 @@ app.add_middleware(
     allow_methods=["*"],  # GET, POST 등 모든 통신 방식 허용
     allow_headers=["*"],
 )
+
+EXCLUDE_KEYWORDS = [
+    "cover", "カバー",                      # 커버곡
+    "live", "ライブ", "concert",            # 라이브 영상
+    "inst", "instrumental", "off vocal",   # 반주
+    "mr", "カラオケ", "karaoke",              # 노래방
+    "remix",                                # 변형 곡
+]
 
 # 프론트엔드에서 가져온 제목 텍스트 가공
 def clean_and_split_title(raw_title: str):
@@ -56,23 +64,29 @@ async def search_music(artist: str, limit: int = 20):
         # 유튜브 뮤직에서 '곡(songs)' 카테고리만 콕 집어서 검색!
         # (티저, 커버, 라이브 영상 등 이상한 거 알아서 다 걸러짐)
         search_results = ytmusic.search(query=artist, filter="songs", limit=limit)
+
+        if not search_results:
+            return {"status": "success", "tracks": []}
+        
+        sample_artist = search_results[0].get("artists", [{}])[0].get("name", "").split(",")[0].strip()
         
         # Next.js 프론트엔드가 쓰기 편하게 데이터 모양을 깔끔하게 다듬기
-        clean_tracks = []
+        raw_tracks = []
         for item in search_results:
             raw_title = item.get("title", "")
-            
-            # 제목 가공
-            clean_title, alt_answer = clean_and_split_title(raw_title)
+            raw_title_lower = raw_title.lower()
 
-            # 발음 추출
-            # 한자가 섞인 clean_title을 분석해서 여러 형태로 변환함
-            kks_result = kks.convert(clean_title)
+            if any(keyword in raw_title_lower for keyword in EXCLUDE_KEYWORDS):
+                continue
+
+            item_artists = [a.get("name") for a in item.get("artists", [])]
+            if not any(sample_artist in a for a in item_artists):
+                continue
             
-            # 1. 가타카나 발음 추출 (예: カイジュウノハナウタ)
-            kana_reading = "".join([r['kana'] for r in kks_result])
-            # 2. 로마자 영어 발음 추출 (예: kaijuunohanauta)
-            romaji_reading = "".join([r['hepburn'] for r in kks_result])
+            clean_title, alt_answer = clean_and_split_title(raw_title)  # 제목 가공
+            kks_result = kks.convert(clean_title)   # 발음 추출: 한자가 섞인 clean_title을 분석해서 여러 형태로 변환함
+            kana_reading = "".join([r['kana'] for r in kks_result])  # 1. 가타카나 발음 추출 (예: カイジュウノハナウタ)
+            romaji_reading = "".join([r['hepburn'] for r in kks_result])    # 2. 로마자 영어 발음 추출 (예: kaijuunohanauta)
 
             combined_alts = []
             if alt_answer: 
@@ -81,21 +95,21 @@ async def search_music(artist: str, limit: int = 20):
                 combined_alts.append(kana_reading) # 한자가 포함된 경우만 추가!
             if romaji_reading: 
                 combined_alts.append(romaji_reading)
-                
-            final_alt_answers = ",".join(combined_alts)
 
-            # 곡 제목, 비디오 ID, 썸네일 등 필요한 것만 추출
-            clean_tracks.append({
-                "videoId": item.get("videoId"),
-                "title": clean_title,       
-                "alt_answers": final_alt_answers,  
-                "artist": ", ".join([a.get("name") for a in item.get("artists", [])]),
-                "thumbnail": item.get("thumbnails")[-1].get("url") if item.get("thumbnails") else "",
-                "duration": item.get("duration"),
-                "duration_seconds": item.get("duration_seconds")
+            raw_tracks.append({
+                "id": { "videoId": item.get("videoId") },
+                "snippet": {
+                    "title": clean_title,
+                    "channelTitle": ", ".join(item_artists),
+                    "thumbnails": { "default": { "url": item.get("thumbnails")[-1].get("url") if item.get("thumbnails") else "" } }
+                },
+                "alt_answers": ",".join(combined_alts),
+                "_duration_seconds": item.get("duration_seconds")
             })
             
-        return {"status": "success", "tracks": clean_tracks}
+        random.shuffle(raw_tracks)
+        
+        return {"status": "success", "tracks": raw_tracks}
         
     except Exception as e:
         return {"status": "error", "message": str(e)}
