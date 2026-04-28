@@ -56,6 +56,9 @@ class QuizCreateSchema(BaseModel):
     thumbnail_url: str
     questions: List[QuestionSchema]
 
+class NormalizeRequest(BaseModel):
+    text: str
+
 # 프론트엔드에서 가져온 제목 텍스트 가공
 def clean_and_split_title(raw_title: str):
     # 1. 특수문자 디코딩
@@ -282,6 +285,21 @@ async def get_my_profile(request: Request):
             "status": "success", 
             "profile": profile_res.data
         }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    
+# 유저 입력값 발음 변환용 API
+@app.post("/api/normalize")
+async def normalize_text(req: NormalizeRequest):
+    try:
+        if not req.text:
+            return {"status": "success", "normalized": ""}
+        
+        # pykakasi로 유저 입력값을 분석해서 히라가나(hira)만 쏙쏙 뽑아내고 띄어쓰기 없애기!
+        result = kks.convert(req.text)
+        normalized_text = "".join([item['hira'] for item in result]).replace(" ", "")
+        
+        return {"status": "success", "normalized": normalized_text}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
