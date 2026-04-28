@@ -8,12 +8,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from ytmusicapi import YTMusic
 import pykakasi
+from janome.tokenizer import Tokenizer
 import random
 
 # FastAPI 앱 및 YTMusic 객체 생성
 app = FastAPI()
 ytmusic = YTMusic()
 kks = pykakasi.kakasi()
+tokenizer = Tokenizer()
+
 SUPABASE_URL = "https://ypeulfyywbpvzhokzftu.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlwZXVsZnl5d2Jwdnpob2t6ZnR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzMjQwNTgsImV4cCI6MjA4OTkwMDA1OH0.hyUipwapRkPWSrh1S7Ad9T5m10Y70TjIJqrV48n1lzY"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -84,7 +87,11 @@ def clean_and_split_title(raw_title: str):
     else:
         # 대소문자 무시(re.IGNORECASE)하고 지저분한 키워드 싹둑!
         clean_title = re.sub(r"【.*?】|\[.*?\]|\(.*?\)|official|music video|mv|audio", "", main_title, flags=re.IGNORECASE).strip()
-        
+
+    # 고리점(。) 제거
+    clean_title = clean_title.replace("。", "").replace(".", "").strip()
+    alt_answer = alt_answer.replace("。", "").replace(".", "").strip()
+
     return clean_title, alt_answer
 
 # 유튜브 뮤직 검색 API 엔드포인트 만들기
@@ -114,8 +121,12 @@ async def search_music(artist: str, limit: int = 20):
                 continue
             
             clean_title, alt_answer = clean_and_split_title(raw_title)  # 제목 가공
-            kks_result = kks.convert(clean_title)   # 발음 추출: 한자가 섞인 clean_title을 분석해서 여러 형태로 변환함
-            kana_reading = "".join([r['kana'] for r in kks_result])  # 1. 가타카나 발음 추출 (예: カイジュウノハナウタ)
+
+            tokens = tokenizer.tokenize(clean_title)
+            kana_reading = "".join([token.reading if token.reading != '*' else token.surface for token in tokens])
+
+            kks_result = kks.convert(kana_reading)   # 발음 추출: 한자가 섞인 clean_title을 분석해서 여러 형태로 변환함
+            #kana_reading = "".join([r['kana'] for r in kks_result])  # 1. 가타카나 발음 추출 (예: カイジュウノハナウタ)
             romaji_reading = "".join([r['hepburn'] for r in kks_result])    # 2. 로마자 영어 발음 추출 (예: kaijuunohanauta)
 
             combined_alts = []
@@ -294,10 +305,18 @@ async def normalize_text(req: NormalizeRequest):
     try:
         if not req.text:
             return {"status": "success", "normalized": ""}
+
+        tokens = tokenizer.tokenize(req.text)
         
+        # token.reading이 '*'이면 기호나 영어 등이므로 원래 글자(surface)를 그대로 사용
+        kana_reading = [token.reading if token.reading != '*' else token.surface for token in tokens]
+        normalized_text = "".join(kana_reading).replace(" ", "")
+
+        # 고리점(。) 제거
+        normalized_text = normalized_text.replace("。", "").replace(".", "").strip()
         # pykakasi로 유저 입력값을 분석해서 히라가나(hira)만 쏙쏙 뽑아내고 띄어쓰기 없애기!
-        result = kks.convert(req.text)
-        normalized_text = "".join([item['hira'] for item in result]).replace(" ", "")
+        # result = kks.convert(req.text)
+        # normalized_text = "".join([item['hira'] for item in result]).replace(" ", "")
         
         return {"status": "success", "normalized": normalized_text}
     except Exception as e:
