@@ -88,10 +88,6 @@ def clean_and_split_title(raw_title: str):
         # 대소문자 무시(re.IGNORECASE)하고 지저분한 키워드 싹둑!
         clean_title = re.sub(r"【.*?】|\[.*?\]|\(.*?\)|official|music video|mv|audio", "", main_title, flags=re.IGNORECASE).strip()
 
-    # 고리점(。) 제거
-    clean_title = clean_title.replace("。", "").replace(".", "").strip()
-    alt_answer = alt_answer.replace("。", "").replace(".", "").strip()
-
     return clean_title, alt_answer
 
 # 유튜브 뮤직 검색 API 엔드포인트 만들기
@@ -312,8 +308,6 @@ async def normalize_text(req: NormalizeRequest):
         kana_reading = [token.reading if token.reading != '*' else token.surface for token in tokens]
         normalized_text = "".join(kana_reading).replace(" ", "")
 
-        # 고리점(。) 제거
-        normalized_text = normalized_text.replace("。", "").replace(".", "").strip()
         # pykakasi로 유저 입력값을 분석해서 히라가나(hira)만 쏙쏙 뽑아내고 띄어쓰기 없애기!
         # result = kks.convert(req.text)
         # normalized_text = "".join([item['hira'] for item in result]).replace(" ", "")
